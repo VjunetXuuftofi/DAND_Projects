@@ -1,5 +1,7 @@
 #Udacity Data Analyst Nanodegree Projects
+
 ##Thomas Woodside
+
 The [Udacity Data Analyst Nanodegree](https://github.com/user/repo/blob/branch/other_file.md) is an amazing program that
 teaches the fundamentals of programmatic data analysis, in languages like Python, R, and Javascript. The program is 
 created in part by companies in the fields that really need the skills it teaches. I learned an immense amount of 
