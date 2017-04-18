@@ -1,0 +1,23 @@
+circle {
+    stroke: black;
+    stroke-width: 0.7;
+    opacity: 0.7;
+}
+
+h2 {
+    text-align: center;
+    color: black;
+}
+
+div.type-buttons, div.size-buttons, #info {
+    padding: 3px;
+    border: 2px solid black;
+    margin: 7px;
+    text-align: center;
+}
+
+div.size-buttons div, div.type-buttons div {
+    background-color: rgb(251, 201, 127);
+    padding: 3px;
+    margin: 7px;
+}

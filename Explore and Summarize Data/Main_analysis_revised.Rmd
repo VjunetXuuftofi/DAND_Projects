@@ -1,0 +1,945 @@
+---
+title: "Analysis of 2016 Presidential Election Campaign Finance in California"
+output: html_document
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=14, fig.path='Figs/', echo=FALSE, warning=FALSE, message=FALSE)
+options(warn=-1) #Occasionally there would be so many warnings that R would 
+#                 freeze
+library(ggplot2)
+library(stringr)
+library(plyr)
+library(dplyr)
+library(GGally)
+library(gridExtra)
+library(ggmap)
+library(taRifx.geo)
+library(memisc)
+```
+##Introduction
+The 2016 election cycle has been one of the most unusual in American history. In this election, the politicians experienced with running states and nations are 
+often floundering while those with little experience are promising a new brand
+of leadership. The 2016 election is also marked by debates over fundraising. It 
+is the first presidential election since the Supreme Court Citizen's United 
+decision where campaigns have been fully taking advantage of Super PAC funding.
+Bernie Sanders boasts often of his low average donations; Donald Trump was for a 
+while self-funding his campaign. In this light, I will investigate direct donations to all candidates, failed or still in the running, and examine the effects of various variables on fundraising.
+
+```{r}
+
+setwd("/Users/thomaswoodside/Dropbox/Final R Project/Election Analysis")
+
+ed <- read.csv("electiondata.csv", row.names = NULL)
+
+colnames(ed) <- colnames(ed[,c(2:19)]) #the import shifted the columns
+
+ed <- ed[,1:18]
+
+summary(ed)
+
+str(ed)
+
+levels(ed$cand_nm)
+```
+
+The election is currently fairly crowded with 21 candidates in both parties. By number of donors, though, most of them aren't competing at all:
+
+```{r}
+ggplot(data = ed, 
+       aes(x = cand_nm[])) +
+  geom_histogram() + 
+  theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+  ggtitle("Number of Donations by Candidate") + 
+  ylab("Number of Donations") +
+  xlab("Candidate Name")
+```
+
+The first thing that I noticed about the graph was that the names were too long 
+to fit nicely onto the graph. I decided to cut off first names to simply to the 
+last name of the candidate so that names are more easily visible in graphs:
+
+```{r}
+#changes the candidate name to only last name
+ed$cand_nm <- str_split_fixed(ed$cand_nm,
+                              ",",
+                              2)[,1]
+
+ggplot(data = ed,
+       aes(x = cand_nm[])) +
+  geom_histogram() + 
+  theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+  ylab("Number of Donations") +
+  xlab("Candidate Name") +
+  ggtitle("Number of Donations by Candidate")
+```
+
+Clearly, the two major Democratic candidates (Sanders and Clinton) are leading by a long shot in terms of number of contributions. This makes sense, as California is a heavily Democratic state. 
+I decided to add political party information into the data.
+
+```{r}
+party = function(x) {
+  if (x == "Sanders" | x == "Clinton" | x == "O'Malley" | x == "Webb" | x == "Lessig")  {
+    return("D")
+  }
+  else {
+    return("R")
+  }
+}
+
+ed$prty <- lapply(ed$cand_nm, party) #adds party information into the dataframe
+
+ed$prty <- as.factor(unlist(ed$prty))
+
+plt1 <- ggplot(aes(x = cand_nm,
+                   fill = prty), 
+               data = ed) + 
+  geom_histogram() +
+  scale_fill_manual(values = c("R" = "red",
+                               "D" = "blue")) + 
+  theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+  xlab("Candidate Name") +
+  ylab("Number of Donations") +
+  ggtitle("Number of Donations by Candidate")
+plt1
+
+```
+
+After adding political party affiliation, I decided to also include the current polling numbers (in California) of the candidates. This represents the percentage
+of voters belonging of the candidates' respective parties who say they would vote
+for the candidate. 
+
+```{r}
+getpoll = function(x) {
+  polling <- read.csv("polling.csv")
+  return (subset(polling, 
+                 name == x)$poll)
+}
+
+#reads in the polling numbers for the candidates
+polling <- read.csv("polling.csv")
+
+ed$polls <- lapply(ed$cand_nm,
+                   getpoll)
+
+ed$polls <- as.numeric(unlist(ed$polls))
+
+#adds party data together with the polling data to plot
+polling$prty <- as.factor(unlist(lapply(polling$name, 
+                                           party))) 
+
+ggplot(data = polling,
+       aes(x = name,
+           y = poll,
+           fill = prty)) + 
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("R" = "red",
+                               "D" = "blue")) + 
+  theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+  ggtitle("Polling numbers by candidate") +
+  xlab("Candidate Name") +
+  ylab("Poll Number (%)")
+```
+
+Of course, it isn't a good idea to compare the polling of candidates of different parties, as they aren't polling against each other at this point. Some candidates, although they have received donations have 0 support in polls, although this is often because they recently dropped out.
+
+```{r}
+
+ggplot(data = polling,
+       aes(x = name,
+           y = poll)) + 
+  geom_bar(stat = "identity") +
+  facet_wrap(~prty) + 
+  theme(axis.text.x = element_text(angle = 50, hjust=1)) +
+  ggtitle("Poll Numbers by Candidate by Party") +
+  xlab("Candidate Name") +
+  ylab("Poll Number (%)")
+```
+
+I then decided to create a scatterplot matrix to see what I should investigate next.
+
+```{r}
+#I thought that these datapoints looked the most interesting
+subsetted <- ed[, c("cand_nm",
+                    "contbr_city",
+                    "contbr_occupation",
+                    "contb_receipt_amt",
+                    "prty",
+                    "polls")]
+
+ggpairs(subsetted)
+```
+
+Because of the absense of much quantitative data, the scatterplot matrix did not prove particularly insightful. 
+However, I was intrigued by the monetary value of donations, as well as the different cities and towns contributing.
+First, I decided to investigate the monetary value of donations. 
+
+```{r}
+ggplot(data = ed,
+       aes(x = contb_receipt_amt)) + 
+  geom_histogram() +
+  xlab("Donation Amount") +
+  ggtitle("Distribution of Donation Amounts")
+
+#This helps for the below subset
+ed$receipt_desc <- as.character(ed$receipt_desc)
+
+#This omits rid of negative values and their positive pairs
+ed_subset <- subset(ed,
+                    grepl("REDESIGNATION",
+                          receipt_desc) == FALSE &
+                      grepl("Refund",
+                            receipt_desc) == FALSE &
+                      grepl("REATTRIBUTION",
+                            receipt_desc) == FALSE &
+                      contb_receipt_amt > 0)
+
+ed_subset <- na.omit(ed_subset)
+
+ggplot(data = ed_subset, 
+       aes(x = contb_receipt_amt)) + 
+  geom_histogram()
+
+ggplot(data = ed_subset, 
+       aes(x = contb_receipt_amt)) + 
+  geom_histogram(binwidth = 0.1) + 
+  scale_x_log10()
+```
+
+I realized that there were some contributions which were negative, usually because they were "Redesignations", "Reattributions" or "Refunds". They were usually paired with another value with the same description that was positive with the same absolute value. I removed these for the sake of graphing. When I did, I noticed that the
+data was highly skewed, with most donations at less than $1000 dollars but some
+at almost $3000. I applied a log ten scale and realized that (not surprisingly)
+people tend to give donations at regular amounts. 
+
+```{r}
+plt3 <- ggplot(data = ed_subset,
+               aes(x = cand_nm,
+                   y = contb_receipt_amt,
+                   fill = prty)) + 
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values = c("D" = "blue",
+                               "R" = "red")) +
+  theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+  ylab("Total Value of Donations ($)") +
+  xlab("Candidate Name") +
+  ggtitle("Total Value of Donations by Candidate")
+
+plt3
+```
+
+I immediately noticed that although Sanders is close to Clinton in terms of number of donations, he isn't in terms of amount raised. 
+
+```{r}
+grid.arrange(plt1, 
+             plt3)
+```
+
+Looking at these two graphs side by side, Cruz and Carson seem to have dropped relatively as well. I decided to compare these two variables (number of donations vs total donation size).
+
+```{r}
+ed_subset <- group_by(ed_subset, 
+               cand_nm)
+#Number of contributors, poll numbers, party information, total contributors,
+# and mean contributors
+summarised <- summarise(ed_subset, 
+                        mean = mean(contb_receipt_amt), 
+                        n = n(), 
+                        sum = sum(contb_receipt_amt), 
+                        polls = mean(polls), 
+                        party = party(cand_nm))
+
+ggplot(data = summarised, 
+       aes(x = n, 
+           y = sum, 
+           size = polls)) + 
+  geom_point() +
+  xlab("Number of Donors") +
+  ylab("Total Monetary Donations ($)") +
+  ggtitle("Number of Donors vs Amount of Money Raised")
+
+ggplot(data = summarised, 
+       aes(x = n, 
+           y = sum, 
+           size = polls, 
+           color = party)) + 
+  geom_point() + 
+  scale_y_log10() + 
+  scale_x_log10() + 
+  stat_smooth(method = "lm") + 
+  geom_text(aes(label= cand_nm), 
+            hjust = 0, 
+            vjust = 0, 
+            size = 5) + 
+  scale_color_manual(values = c("D" = "blue", 
+                                "R" = "red")) +
+  xlab("Number of Donors") +
+  ylab("Total Monetary Donations ($)") +
+  ggtitle("Number of Donors vs Amount of Money Raised")
+```
+
+Generally, there is a clear correlation between number of donors and total donation amount. However, some candidates raise more money than would be expected by the number of donations, others less. An interesting observation that I made was that candidates lying above the trendline on this graph are generally considered "establishment" candidates and have held high-level offices in government, generally having large amounts of experience. Those lying below include some establishment candidates but also three "upstart" senators (Paul, Cruz, and Sanders) and three candidates who have never held elected office (Trump, Lessig, and Carson). This seems to hold true for both parties.
+This observation makes a good amount of sense: establishment candidates tend to 
+have the better-funded experienced political forces donating to their campaigns, while candidates attempting to disrupt will be less likely to.
+Another observation that I made was that candidates below the margin of error seemed to be doing better in polls than those above on average (except Clinton). I made another graph to investigate:
+
+```{r}
+ggplot(data = subset(summarised, 
+                     polls >0), 
+       aes(x = polls, 
+           y = sum/n, 
+           color = party)) + 
+  geom_point() + 
+  stat_smooth(method = "lm") + 
+  scale_x_log10() + 
+  geom_text(aes(label = cand_nm), 
+            hjust = 0, 
+            vjust = 0, 
+            size = 5) + 
+  scale_color_manual(values= c("R" = "red", 
+                               "D" = "blue")) + 
+  ylim(c(0, 2000)) +
+  ylab("Average Donation Amount") +
+  xlab("Poll Number (%)") +
+  ggtitle("Polls seem to Increase with Decreasing Donation Amounts")
+```
+
+It would seem that this election, Republicans with higher average donations generally have lower support in polls. Of course, there is no way to know given this data why this is, but I hypothesize that it may have something to do with the anti-establishment fervor this election. 
+This trend does not seem to hold true for Democrats, although of course  there are only three datapoints.
+
+```{r}
+cor.test(subset(summarised, 
+                prty = "R")$mean,
+         subset(summarised, 
+                prty = "R")$polls)
+```
+
+The correlation appears to be negative as noted, though it is not statistically significant.
+Next, I decided to look at how much each candidate raised per percent support in the polls. 
+
+```{r}
+ggplot(data = subset(summarised,
+                     polls >0), 
+       aes(x = cand_nm,
+           y = sum/polls,
+           fill = party)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("R" = "red",
+                               "D" = "blue")) +
+  theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+  ylab("Money raised per percent support in the polls ($)") +
+  xlab("Candidate Name") +
+  ggtitle("Dollars Raised per Percent Poll Support")
+```
+
+Clearly, Bush is raising a huge amount of money for the small support he has in the polls. Clinton is also raising proportionally higher numbers. Sanders, Carson, and Christie are all raising lower amounts for their support. And Donald Trump is also raising almost nothing for his high support. 
+Next I turned my attention to regional differences. 
+
+```{r}
+mapca <- get_map(location = c(lon = -120, lat = 37),
+                 zoom = 6 ,
+                 source = "osm") # to retrieve a map of California
+mapsf <- get_map(location = c(lon = -122.16, 
+                              lat = 37.6), 
+                 zoom = 9, 
+                 source = "osm") #map of SF Bay Area
+mapla <- get_map(location = c(lon = -118.05,
+                              lat = 34),
+                 zoom = 9,
+                 source = "osm") #Map of LA Area
+options(BingMapsKey= 
+          "AmNVPx7yo_PkpNYa_MyqCH3pJd--SkWrFDpRkhf1HN2zgaMUF2AfuYzydKNoaXPn")
+
+#a dataframe of all of the unique zipcodes
+geocodes <- as.data.frame(unique(substr((ed$contbr_zip), 
+                                        1, 5)))
+
+colnames(geocodes) <- c("zip")
+
+geocodes$coord <- lapply(geocodes$zip, service = "bing", geocode)
+
+geo = function(x, df = geocodes) {
+  return(subset(df, zip == x)$coord)
+}
+
+get_lat = function(x) {
+  return(x[1])
+}
+
+get_lon = function(x){
+  return (x[2])
+}
+
+ed_subset$lat <- lapply(substr(ed_subset$contbr_zip,
+                               1,5), geo)
+
+ed_subset$lat <- lapply(ed_subset$lat, 
+                        unlist)
+
+ed_subset$lat <- lapply(ed_subset$lat,
+                        get_lat)
+
+ed_subset$lat <- as.numeric(unlist(ed_subset$lat))
+
+
+ed_subset$lon <- lapply(substr(ed_subset$contbr_zip,
+                               1,5), geo)
+
+ed_subset$lon <- lapply(ed_subset$lon, 
+                        unlist)
+
+ed_subset$lon <- lapply(ed_subset$lon, 
+                        get_lon)
+
+ed_subset$lon <- as.numeric(unlist(ed_subset$lon))
+
+
+ed_subset <- group_by(ed_subset, 
+                      lat, 
+                      lon, 
+                      prty)
+
+#creates a summary of the number of donors of each party in each zip code
+partyareasummary <- summarise(ed_subset,
+                              count = n())
+ggmap(mapca) + 
+  geom_point(data = partyareasummary, 
+             aes(x = lon, 
+                 y = lat, 
+                 color = prty, 
+                 size = count,
+                 alpha = count)) + 
+  scale_color_manual(values = c("R" = "red",
+                                "D" = "blue")) +
+  ggtitle("Party Distribution throughout California")
+
+ggmap(mapsf) + 
+   geom_point(data = partyareasummary, 
+              aes(x = lon, 
+                  y = lat, 
+                  color = prty, 
+                  size = count,
+                  alpha = count)) + 
+   scale_color_manual(values = c("R" = "red",
+                                 "D" = "blue")) +
+  ggtitle("Party Distribution in the San Francisco Bay Area")
+ggmap(mapla) + 
+    geom_point(data = partyareasummary, 
+               aes(x = lon, 
+                   y = lat, 
+                   color = prty, 
+                   size = count,
+                   alpha = count)) + 
+    scale_color_manual(values = c("R" = "red",
+                                  "D" = "blue")) +
+  ggtitle("Party Distribution in the Los Angeles Area")
+```
+
+Using ggmap and TaRifx.geo, a familiar story presents itself. Support for Democrats is strongest in urban areas such as Los Angeles and the San Francisco Bay. Support for Republicans comes from more rural areas. However, since donors in urban areas far outnumber rural areas, overall Democrats have more support.
+
+```{r}
+ed_subset <- ungroup(ed_subset)
+
+ed_subset <- group_by(ed_subset, 
+                      lat, 
+                      lon, 
+                      cand_nm, 
+                      polls)
+#creates a summary of the number of donations for each candidate in each zip code
+candareasummary <- summarise(subset(ed_subset),
+                             count = n())
+
+ggmap(mapca) + 
+  geom_point(data = subset(candareasummary,
+                           cand_nm == "Clinton" |
+                             cand_nm == "Sanders"),
+             aes(x = lon, 
+                 y = lat, 
+                 color = cand_nm, 
+                 alpha = count, 
+                 size = count)) + 
+  scale_color_manual(values = c("Clinton" = "purple",
+                                "Sanders" = "yellow")) +
+  ggtitle("Distribution of Support for Sanders and Clinton")
+```
+
+I took a look at the specific Democrats (of which only Sanders and Clinton have any support). Clinton has a definite edge in Los Angeles, Silicon Valley, and San
+Francisco. Sanders is leading slightly in places like Oakland, Sacramento, and San Jose.
+Next, I decided to look at the Republicans with the most donations (Cruz, Carson, and Rubio).
+
+```{r}
+ggmap(mapca) + 
+  geom_point(data = subset(candareasummary,
+                           cand_nm == "Rubio" |
+                             cand_nm == "Cruz" |
+                             cand_nm == "Carson"), 
+             aes(x = lon, 
+                 y = lat, 
+                 color = cand_nm, 
+                 alpha = count,
+                 size = count)) + 
+  scale_color_manual(values = c("Rubio" = "red",
+                                "Cruz" = "black",
+                                "Carson" = "yellow"))
+
+```
+Interestingly, Rubio seems to be doing best in the same places that Clinton was,
+such as Silicon Valley and Los Angeles while Carson seems to be doing best in more suburban or rural areas as well as Oakland. Cruz seems to lead mostly in Fresno and Bakersfield, though he also has footholds in San Jose and Los Angeles
+I knew that most of the donations were coming from the cities, but is that were the money is coming from too? I tried to create an effective visualization, trying 
+both size and alpha, but neither seemed to provide any relevant insights. 
+So I turned my attention to donor occupations.
+
+```{r}
+head(by(ed_subset$contb_receipt_amt,
+        ed_subset$contbr_occupation, 
+        mean))
+
+head(unique(ed_subset$contbr_occupation))
+ed_subset <- ungroup(ed_subset)
+ed_subset <- group_by(ed_subset,
+                      contbr_occupation,
+                      prty)
+
+occupationsummary <- summarise(ed_subset,
+                               mean = mean(contb_receipt_amt),
+                               n = n())
+
+occupationsummary <- ungroup(occupationsummary)
+
+occupationsummary <- group_by(occupationsummary,
+                              contbr_occupation)
+
+occupationsummary <- occupationsummary[with(occupationsummary,
+                                            order(-n)),]
+
+occupationsummary
+```
+
+I immediately noticed that some of the professions had many more donations going to one party than the other. I noticed this even in the ranges with thousands of people. For example, it is evident that many more retirees donating donated to Republicans over Democrats. I combined this into a new summary.
+
+```{r}
+occupationsummary <- occupationsummary[with(occupationsummary,
+                                            order(contbr_occupation,
+                                                  prty)),] 
+#else summary will not work
+
+percentagessummary <- summarise(occupationsummary,
+                                       percent_d = as.vector(n)[1]/sum(n),
+                                       n= sum(n), 
+                                       mean = sum(mean*n)/sum(n))
+
+percentagessummary <- percentagessummary[with(percentagessummary,
+                                              order(-n)),]
+
+percentagessummary
+ggplot(data = subset(percentagessummary, 
+                     n> 400 & contbr_occupation != "INFORMATION REQUESTED" &
+                       contbr_occupation != "INFORMATION REQUESTED PER BEST EFFORTS"),
+       aes(x = contbr_occupation, 
+           y = percent_d)) + 
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+  ggtitle("Percent of the Top Donating Occupations that are Democrats") +
+  ylab("Percent Democrat") +
+  xlab("Occupation")
+```
+
+Some stark differences can be seen. More than 75% of retirees donating donate to Republicans, while people who are not employed donated overwhelmingly (96.6%) to Democrats. These two in particular make sense, as typically older people are more conservative and Democrats tend to support more welfare for the unemployed. 
+As for who donated the most:
+
+```{r}
+ggplot(data = subset(percentagessummary, 
+                      n> 400 & contbr_occupation != "INFORMATION REQUESTED" &
+                        contbr_occupation != "INFORMATION REQUESTED PER BEST EFFORTS"),
+        aes(x = contbr_occupation, 
+            y = mean)) + 
+  geom_bar(stat = "identity") +
+   theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+   ggtitle("Average Donation Amounts for Top Donating Occupations") +
+   ylab("Average Donation Amount") +
+   xlab("Occupation")
+```
+
+The results are not suprising: attorneys, CEOs and Presidents donate the most, 
+which makes sense because they are paid the most. On the other side, the 
+unemployed and teachers donate relatively little, which again corresponds to
+their relatively low (or nonexistent) incomes.
+I then wanted to see whether professions with more Democrats donated less or more.
+
+```{r}
+ggplot(percentagessummary, aes(x = percent_d,
+                               y = mean)) + 
+  geom_point() + 
+  stat_smooth(method = "lm")
+
+cor.test(percentagessummary$percent_d,
+         percentagessummary$mean)
+```
+
+There is a definitely a negative correlation. Workers with more Democratic 
+occupations are donating less on average than those with more Republican 
+occupations. 
+
+```{r}
+ed_subset <- ungroup(ed_subset)
+
+ed_subset <- group_by(ed_subset, 
+                      contbr_employer,
+                      prty)
+
+employersummary <- summarise(ed_subset, #Create a summary of employers by party
+                             mean = mean(contb_receipt_amt),
+                             n= n())
+
+employersummary <- ungroup(employersummary)
+
+employersummary <- group_by(employersummary, 
+                            contbr_employer)
+
+employersummary <- employersummary[with(employersummary,
+                                            order(-n)),]
+
+employersummary
+
+```
+
+I noticed that the top 17 observations weren't actually organizations or companies
+employing anyone. So I cut off these values. 
+
+```{r}
+employersummary <- subset(employersummary, n < 230)
+
+employersummary <- employersummary[with(employersummary,
+                                             order(contbr_employer,
+                                                   prty)),]
+
+#The below summary summarizes mean donation amount and percent party affiliation 
+#by employer
+percentagessummary <- subset(summarise(employersummary, 
+                                        percent_d = as.vector(n)[1]/sum(n),
+                                        n= sum(n), 
+                                        mean = sum(mean*n)/sum(n)),
+                             n > 50)
+ 
+percentagessummary <- percentagessummary[with(percentagessummary,
+                                               order(-n)),]
+
+ggplot(data = percentagessummary,
+        aes(x = contbr_employer, 
+            y = percent_d)) + 
+   geom_bar(stat = "identity") +
+   theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+   ggtitle("Percent of Employees of the Top Donating Organizations that are Democrats") +
+   ylab("Percent Democrat") +
+   xlab("Employer")
+```
+
+Clearly, almost all of these employers are strongly Democrat. Employees of the Creative Artists Agency donated completely to Democrats. So did employees
+of Hillary Clinton's political campaign. Google Employees donated overwhelmingly
+to Democrats too. The most Republican employer was Kaiser Permanente, which still
+had over 60% of its donations to Democrats. For some reason, despite Unemployed
+being very Democrat when it was in occupation, is very Republican when specified
+as an employer. I really don't know why this is, and because there are many ways
+to specify unemployed (ie. "Not Employed", "None", etc.) this seems to be an 
+outlier. Looking at the very Democratic donations made by these employees, I 
+wondered what the breakdown was within Democrats. 
+
+```{r}
+ed_subset <- ungroup(ed_subset)
+
+ed_subset <- group_by(ed_subset,
+                      contbr_employer,
+                      prty,
+                      cand_nm)
+
+#The below summarizes the distribution of support for democrats within the top 
+#employers
+democratsummary <- subset(summarise(ed_subset,
+                                n = n()), 
+                          prty == "D")
+
+#Restricts the summary to only show the employers shown on the previous graph
+democratsummary <- subset(democratsummary, 
+                          contbr_employer %in% c("APPLE INC.",
+                                                 "CREATIVE ARTISTS AGENCY",
+                                                 "GOOGLE",
+                                                 "HILLARY FOR AMERICA",
+                                                 "KAISER PERMANENTE",
+                                                 "LOS ANGELES COUNTY",
+                                                 "STANFORD UNIVERSITY",
+                                                 "STATE OF CALIFORNIA",
+                                                 "UCLA", 
+                                                 "UNITED AIRLINES",
+                                                 "WELLS FARGO"))
+
+ggplot(data = democratsummary,
+         aes(x = contbr_employer,
+             y = n,
+             fill = cand_nm)) + 
+    geom_bar(stat = "identity", 
+             position = "fill") +
+    theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+    ggtitle("Distribution of Democratic Support from Employees of Top Donating Employers") +
+    ylab("Percent of Donations") +
+    xlab("Employer")
+
+```
+
+Employees of Creative Artists Agency and Hillary For America both donated 
+exclusively to Clinton. Los Angeles County and UCLA employees donated more to 
+Sanders. United Airlines employees donated overwhelmingly to Sanders, while Wells Fargo employees donated to Clinton much more. One surprising result was that at 
+both Google and Apple, about 10% of donations went to Lawrence Lessig, a 
+candidate who got almost no support otherwise. Again, I wanted to see how much 
+these occupations were donating. 
+
+```{r}
+ggplot(data = percentagessummary, aes(x = contbr_employer,
+                                      y = mean)) + 
+  geom_bar(stat = "identity") + 
+  theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+  xlab("Employer") +
+  ylab("Mean Donation Amount") +
+  ggtitle("Mean Donation Amounts by Employees Top Donating Employers")
+```
+
+It is clear that Facebook has extrodinarily high donation amounts, as does 
+Stanford, Creative Artists Agency, and Google. Employees of the Clinton campaign,
+the Unemployed, and United Airlines donate much less. This seems to reflect at 
+least roughly the salaries that employees of these companies make.
+
+I decided that now, after doing some exploration, I would create a regression attempting to estimate a donor's donation size.
+
+```{r}
+ m1 <- lm(I(contb_receipt_amt)~I(substr(contbr_zip,
+                                        1, 5)),
+          data = ed_subset)
+ 
+ m2 <- update(m1, ~ . + cand_nm)
+ 
+ m3 <- update(m2, ~ . + contbr_occupation)
+ 
+ print("Zip code only r^2:")
+ 
+ print(summary(m1)$r.squared)
+ 
+ print("Zip code and candidate r^2:")
+ 
+ summary(m2)$r.squared
+ 
+ print("Zip code, candidate, and occupation r^2:")
+ 
+ summary(m3)$r.squared
+```
+
+With a relatively good r^2 value of 0.488, the final model seems fairly effective for using only three variables to predict a very complicated event. However, because of the number of occupations that were included with few people in them, the model seems unlikely to keep up this value with new data. 
+I then decided to see if I could predict party affiliation using zip code and occupation.
+
+```{r}
+ed_subset <- ungroup(ed_subset)
+
+ed_subset$contbr_zip <- as.character(ed_subset$contbr_zip)
+
+forregression <- na.omit(ed_subset)
+
+forregression <- subset(forregression,
+                        contbr_occupation != "")
+
+convertprty <- function(x) {
+  if (x == "D")
+  {
+    return(1)
+  }
+  else
+  {
+    return(0)
+  }
+}
+
+forregression$prty <- as.integer(unlist(lapply(forregression$prty,
+                                               convertprty)))
+
+m4 <- lm(I(prty)~I(substr(contbr_zip,
+                          1, 5)),
+         data = forregression)
+
+m5 <- update(m4, ~ . + contbr_occupation)
+
+print("Just zip code r^2:")
+
+summary(m4)$r.squared
+
+print("Zip code and occupation:")
+
+summary(m5)$r.squared
+
+predictions <- predict(m5)
+
+#The following uses the predictions and calculates the percent of the time that they are corrrect
+
+bound <- cbind(unlist(lapply(ed_subset$prty,
+                             convertprty)),
+               round(predictions))
+
+bound <- as.data.frame(bound)
+
+error <- bound$V1 - bound$V2
+
+error <- as.data.frame(error)
+
+accuracy <- nrow(subset(error,
+                        error == 0))/nrow(error)
+
+baseline <- nrow(subset(ed_subset,
+                        prty == "D"))/nrow(ed_subset)
+
+print("Baseline accuracy: ")
+
+baseline
+
+print("Accuracy of Model: ")
+
+accuracy
+```
+
+The model can predict which party an individual will donate to based on the zip code that they live in fairly accurately (with an R-squared value of .565). It can predict which party an individual donates to with 80.6% accuracy. To compare, assuming that every donor donates to Democrats gives a 56.1% accuracy.
+This jump in accuracy is very good, and supports the observations from before that party affiliation is very regional and occupation based. 
+The two models that I built seemed to be ok for the circumstances. But I wanted to see how well they would hold up with newly collected data. I downloaded a new dataset from the FEC, but unfortunately the data had not been updated from when I first downloaded it. At this point, I was ready to conclude this investigation.
+
+## Final Plots and Summary
+
+### Some candidates have many supporters but raise little money.
+```{r}
+plt1 <- plt1 + 
+  xlab("Candidate Name") + 
+  ylab("Number of Donations")
+
+plt3 <- plt3 + 
+  xlab("Candidate Name") + 
+  ylab("Total Amount of Donations ($)")
+grid.arrange(plt1,
+             plt3, 
+             top = "Number of Donations and Total Donation Amount by Candidate")
+count(subset(ed_subset,
+             cand_nm == "Cruz"))/count(subset(ed_subset,
+                                                 cand_nm == "Rubio"))
+```
+This graph revealed the discrepancies between number of supporters and donation amounts. Some candidates that had many donors did not raise very much relatively
+and vice versa. For example, Bernie Sanders had about 92% as many donations as Hillary Clinton (14,515 vs 15,790) but only raised about 16% what she did ($2,154,745 vs $13,575,640). Similarly, Ted Cruz raised about 51% what Marco Rubio dod despite having roughly 2.57 times the donations. 
+
+###Establishment candidates have higher average donation amounts
+```{r}
+ggplot(data = summarised, 
+       aes(x = n, 
+           y = sum,
+           color = party)) + 
+  geom_point(aes(size = polls)) + 
+  scale_y_log10() + 
+  scale_x_log10() +
+  stat_smooth(method = "lm") + 
+  geom_text(aes(label= cand_nm), 
+            hjust = 0, 
+            vjust = 0, 
+            size = 5) + 
+  scale_color_manual(values = c("D" = "blue",
+                                "R" = "red")) + 
+  ylab("Total Donations ($)") + 
+  xlab("Number of Donors") + 
+  ggtitle("The Dividing Line") +
+  scale_size_continuous(name = "Polling Average (%)")
+```
+
+This graph revealed that the average donation size is heavily influenced by whether candidates are considered "establishment" or not. Candidates who have lower average donations (and thus fall under the trendline) tend to consider themselves to be "outsider" or "anti-establishment" candidates, while those with higher average donations (falling above the trendline) tend to be more "insider" or "establishment" candidates. I hypothesized that this could be due to the establishment candidates have deeper connections with bigger donors while anti-establishment candidates tend to distance themselves from large donors. Some examples of candidates above the trend line in the establishment category are Hillary Clinton (Mean Donation: $860), Jeb Bush ($1601), and Marco Rubio ($825). Many candidates below the trendline had radically different numbers, such as Bernie Sanders ($148), Ben Carson ($160), and Ted Cruz ($162).   
+
+###Democrats are Concentrated in the Cities
+
+```{r}
+ggmap(mapca) + 
+  geom_point(data = partyareasummary,
+             aes(x = lon,
+                 y = lat,
+                 color = prty,
+                 alpha = count,
+                 size = count)) + 
+  scale_color_manual(values = c("R" = "red",
+                                "D" = "blue"),
+                     name = "party") + 
+  xlab("longitude") + 
+  ylab("latitude") + 
+  ggtitle("Party Distribution across California") + 
+  scale_alpha_continuous(name = "Number of Donors") +
+  scale_size_continuous(name = "Number of Donors")
+```
+
+This map showed the distribution of Democrat and Republican donors across California. Cities like San Francisco, Oakland, and Los Angeles have mostly have Democrat donors, while more rural or suburban areas have more Republican donors. This illustrates the well known concept that more rural voters are more conservative with urbanites being more liberal. 
+
+##Reflection
+
+Overall, this was a very interesting and revealing investigation. It confirmed many of the ideas that I had about the current election but that I had never confirmed. For example, I learned that political "outsiders" really do have smaller donations than insiders and that there really are more Democrats in the cities. I also learned new information, such as the negative correlation of average donation amount and polling averages in the Republican party.   
+I thought that a strength of my investigation was the new data that I introduced (such as polling averages) and how they improved my overall undertanding. 
+A major weakness of my investigation was the lack of data on Super Pacs. Super Pac data is not available from the FEC, but still makes up a large amount of the monetary value of donations (if not number of donors).   
+Some ideas for expansions of this project: 
+  Find a way to include Super Pac data.   
+  Determine the gender of donors based on their names and investigate it as a variable.   
+  Investigate employer as a variable.   
+  
+I've learned a lot from doing this exploration and I hope to continue to learn more throughout the Nanodegree.
+
+
+##Citations:
+
+  Libraries:
+  H. Wickham. ggplot2: elegant graphics for data analysis. Springer New York,
+  2009.
+  
+  Hadley Wickham (2015). stringr: Simple, Consistent Wrappers for Common String
+  Operations. R package version 1.0.0. http://CRAN.R-project.org/package=stringr
+  
+  Hadley Wickham (2011). The Split-Apply-Combine Strategy for Data Analysis.
+  Journal of Statistical Software, 40(1), 1-29. URL
+  http://www.jstatsoft.org/v40/i01/.
+
+  Hadley Wickham and Romain Francois (2015). dplyr: A Grammar of Data
+  Manipulation. R package version 0.4.3. http://CRAN.R-project.org/package=dplyr
+  
+  Barret Schloerke, Jason Crowley, Di Cook, Heike Hofmann, Hadley Wickham,
+  Francois Briatte, Moritz Marbach and Edwin Thoen (2014). GGally: Extension to
+  ggplot2.. R package version 0.5.0. http://CRAN.R-project.org/package=GGally
+
+  Baptiste Auguie (2015). gridExtra: Miscellaneous Functions for "Grid" Graphics.
+  R package version 2.0.0. http://CRAN.R-project.org/package=gridExtra
+  
+  Ari B. Friedman (2014). taRifx.geo: Collection of various spatial functions. R
+  package version 1.0.6. http://CRAN.R-project.org/package=taRifx.geo
+  
+  D. Kahle and H. Wickham. ggmap: Spatial Visualization with ggplot2. The R
+  Journal, 5(1), 144-161. URL
+  http://journal.r-project.org/archive/2013-1/kahle-wickham.pdf
+  
+  Martin Elff (2015). memisc: Tools for Management of Survey Data, Graphics,
+  Programming, Statistics, and Simulation. R package version 0.97.
+  http://CRAN.R-project.org/package=memisc
+  
+  
+  Stack Overflow Posts:
+  
+  https://stackoverflow.com/questions/4350440/split-a-column-of-a-data-frame-to-multiple-columns
+  
+  https://stackoverflow.com/questions/12910218/set-specific-fill-colors-in-ggplot2-by-sign
+  
+  https://stackoverflow.com/questions/10128617/geocodes-if-characters-in-string-in-r
+  
+  https://stackoverflow.com/questions/15624656/labeling-points-in-geom-point-graph-in-ggplot2
+  
+  https://stats.stackexchange.com/questions/18233/using-predict-function-in-r
+  
+  https://stackoverflow.com/questions/1296646/how-to--a-dataframe-by-columns
+  
+  
+  Polling Data:
+  
+  http://elections.huffingtonpost.com/pollster/2016-california-republican-presidential-primary#!partisanship=N&estimate=custom
+  
+  http://elections.huffingtonpost.com/pollster/2016-california-democratic-presidential-primary#!maxdate=2015-11-21&partisanship=N&estimate=custom
+  
+  Other:
+  http://www.geo.ut.ee/aasa/LOOM02331/heatmap_in_R.html
+

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/style_original.css">
+    <script type="text/javascript" src="js/draw_old.js"></script>
+</head>
+<body>
+<p id="info" style=" position: absolute; top: 100px; left: 50px; ">
+    <b>Airport</b> <br>
+    Click on bubbles to see information
+</p>
+<script type="text/javascript">
+    /*
+     Use D3 to load the GeoJSON file
+     */
+    d3.json("data/us.json", draw);
+</script>
+</body>
+</html>
